@@ -47,6 +47,7 @@ export interface AppointmentRow {
   provider?: string;
   location?: string;
   purpose: string;
+  questions?: string[];
   notes?: string;
   createdAt: string;
 }

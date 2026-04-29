@@ -394,9 +394,20 @@ class LocalApi {
 
   // ── APPOINTMENTS ──────────────────────
   async listAppointments(profileId: string): Promise<AppointmentRow[]> { return profileId ? db.appointments.where('profileId').equals(profileId).toArray() : []; }
-  async createAppointment(profileId: string, data: { date: string; time: string; provider?: string; purpose: string }): Promise<AppointmentRow> {
-    const a: AppointmentRow = { id: uid(), profileId, date: data.date, time: data.time, provider: data.provider, purpose: data.purpose, createdAt: now() };
+  async createAppointment(profileId: string, data: { date: string; time: string; provider?: string; purpose: string; questions?: string[]; notes?: string }): Promise<AppointmentRow> {
+    const a: AppointmentRow = { id: uid(), profileId, date: data.date, time: data.time, provider: data.provider, purpose: data.purpose, questions: data.questions, notes: data.notes, createdAt: now() };
     await db.appointments.add(a); return a;
+  }
+  async getAppointment(appointmentId: string): Promise<AppointmentRow> {
+    const a = await db.appointments.get(appointmentId);
+    if (!a) throw new ApiError(404, '/errors/not-found', 'Appointment not found');
+    return a;
+  }
+  async patchAppointment(appointmentId: string, updates: Partial<AppointmentRow>): Promise<AppointmentRow> {
+    await db.appointments.update(appointmentId, updates);
+    const a = await db.appointments.get(appointmentId);
+    if (!a) throw new ApiError(404, '/errors/not-found', 'Appointment not found');
+    return a;
   }
 
   // ── REMINDERS ─────────────────────────

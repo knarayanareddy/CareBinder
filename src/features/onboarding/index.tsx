@@ -15,6 +15,9 @@ export function OnboardingFlow({ onComplete }: { onComplete?: () => void }) {
   const [otpError, setOtpError] = useState('');
   const [loading, setLoading] = useState(false);
   const [profileType, setProfileType] = useState<'self' | 'child' | 'parent' | 'other'>('self');
+  const [ecName, setEcName] = useState('');
+  const [ecPhone, setEcPhone] = useState('');
+  const [ecRelation, setEcRelation] = useState('');
   const [profileName, setProfileName] = useState('');
   const [profileDob, setProfileDob] = useState('');
   const [error, setError] = useState('');
@@ -53,6 +56,11 @@ export function OnboardingFlow({ onComplete }: { onComplete?: () => void }) {
     setError('');
     try {
       const profile = await api.createProfile({ name: profileName.trim(), type: profileType, dob: profileDob || undefined });
+      if (ecName.trim() || ecPhone.trim()) {
+        const ec = { id: Date.now().toString(), name: ecName.trim(), phone: ecPhone.trim(), relationship: ecRelation.trim() };
+        const card = await api.getEmergencyCard(profile.id);
+        await api.patchEmergencyCard(profile.id, { emergencyContacts: [...card.emergencyContacts, ec] });
+      }
       setActiveProfileId(profile.id);
       setStep('security');
     } catch (e: any) {
@@ -180,6 +188,16 @@ export function OnboardingFlow({ onComplete }: { onComplete?: () => void }) {
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Date of Birth</label>
             <input type="date" value={profileDob} onChange={e => setProfileDob(e.target.value)} className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:border-[#1B6B4A] outline-none" />
+          </div>
+          <div className="pt-4 border-t border-gray-100">
+            <h3 className="text-sm font-semibold text-gray-900 mb-3">Emergency Contact (Optional)</h3>
+            <div className="space-y-3">
+              <input type="text" value={ecName} onChange={e => setEcName(e.target.value)} placeholder="Contact Name" className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:border-[#1B6B4A] outline-none text-sm" />
+              <div className="grid grid-cols-2 gap-3">
+                <input type="tel" value={ecPhone} onChange={e => setEcPhone(e.target.value)} placeholder="Phone" className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:border-[#1B6B4A] outline-none text-sm" />
+                <input type="text" value={ecRelation} onChange={e => setEcRelation(e.target.value)} placeholder="Relationship" className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:border-[#1B6B4A] outline-none text-sm" />
+              </div>
+            </div>
           </div>
         </div>
       </div>

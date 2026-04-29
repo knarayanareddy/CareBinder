@@ -7,6 +7,7 @@ import { Card, EmptyState, DoseSheet, SkeletonBlock } from '../../designsystem';
 import { Pill, CheckCircle2, Clock, Plus, RefreshCw, Calendar, ChevronRight } from 'lucide-react';
 import { AdherenceChart } from './AdherenceChart';
 import { AppointmentForm } from '../more/AppointmentForm';
+import { AppointmentDetailModal } from './AppointmentDetailModal';
 
 const DAY_NAMES = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 
@@ -43,6 +44,7 @@ export function TodayTab() {
   const [showAddTask, setShowAddTask] = useState(false);
   const [taskTitle, setTaskTitle] = useState('');
   const [showAddApt, setShowAddApt] = useState(false);
+  const [selectedAptId, setSelectedAptId] = useState<string | null>(null);
 
   const bundle = useLiveQuery(
     () => activeProfileId ? api.getTodayBundle(activeProfileId) : null,
@@ -151,7 +153,7 @@ export function TodayTab() {
           <button onClick={() => setShowAddApt(true)} className="text-xs text-[#1B6B4A] font-medium flex items-center gap-0.5"><Plus size={14} />Add</button>
         </div>
         {appointments.length > 0 ? <div className="space-y-2">{appointments.slice(0, 3).map(a => (
-          <Card key={a.id} className="flex items-center gap-3 py-3">
+          <Card key={a.id} className="flex items-center gap-3 py-3" onClick={() => setSelectedAptId(a.id)}>
             <div className="w-10 h-10 rounded-full bg-blue-50 flex items-center justify-center"><Calendar size={18} className="text-blue-700" /></div>
             <div className="flex-1"><p className="text-sm font-medium text-gray-800">{a.purpose}</p><p className="text-xs text-gray-400">{a.date} · {a.time}</p></div>
             <ChevronRight size={16} className="text-gray-300" />
@@ -181,6 +183,9 @@ export function TodayTab() {
         <DoseSheet open={!!doseSheetMed} onClose={() => setDoseSheetMed(null)} medName={doseSheetMed.med.displayName} strength={doseSheetMed.med.strength} scheduledTime={doseSheetMed.nextTime}
           onAction={(action, snoozeMin, skipReason) => handleDoseAction(action, doseSheetMed.med.id, snoozeMin, skipReason)} />
       )}
+      
+      {/* Appointment Detail Modal */}
+      <AppointmentDetailModal appointmentId={selectedAptId} onClose={() => setSelectedAptId(null)} />
     </div>
   );
 }

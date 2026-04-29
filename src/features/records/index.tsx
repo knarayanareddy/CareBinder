@@ -59,6 +59,7 @@ function RecordCard({ record, onOpen }: { record: HealthRecord; onOpen: () => vo
 }
 
 function UploadModal({ open, onClose, profileId }: { open: boolean; onClose: () => void; profileId: string }) {
+  const [mode, setMode] = useState<'chooser' | 'form'>('chooser');
   const [title, setTitle] = useState('');
   const [docType, setDocType] = useState(DOC_TYPES[0]);
   const [provider, setProvider] = useState('');
@@ -73,11 +74,29 @@ function UploadModal({ open, onClose, profileId }: { open: boolean; onClose: () 
     setSaving(true);
     const { blobKey } = await api.createUploadUrl();
     await api.createRecord(profileId, { title: title.trim(), docType, provider: provider || undefined, date, tags: tags.split(',').map(t => t.trim()).filter(Boolean), blobKey }, file ?? undefined);
-    setSaving(false); setTitle(''); setDocType(DOC_TYPES[0]); setProvider(''); setDate(new Date().toISOString().split('T')[0]); setTags(''); setFile(null); onClose();
+    setSaving(false); setTitle(''); setDocType(DOC_TYPES[0]); setProvider(''); setDate(new Date().toISOString().split('T')[0]); setTags(''); setFile(null); setMode('chooser'); onClose();
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0];
+    if (f) {
+      setFile(f);
+      setTitle(f.name.split('.')[0] || 'New Document');
+      setMode('form');
+    }
   };
 
   return (
-    <Modal open={open} onClose={onClose} title="Upload Record">
+    <Modal open={open} onClose={() => { setMode('chooser'); onClose(); }} title="Upload Record">
+      {mode === 'chooser' ? (
+        <div className="space-y-3">
+          <p className="text-sm text-gray-500 mb-2">How would you like to add this record?</p>
+          <button onClick={() => { inputRef.current?.setAttribute('capture', 'environment'); inputRef.current?.setAttribute('accept', 'image/*'); inputRef.current?.click(); }} className="w-full p-4 bg-gray-50 rounded-xl text-left hover:bg-gray-100 flex items-center gap-3 transition-colors"><span className="text-2xl">📷</span><span className="font-medium text-gray-800">Scan with camera</span></button>
+          <button onClick={() => { inputRef.current?.removeAttribute('capture'); inputRef.current?.setAttribute('accept', 'application/pdf'); inputRef.current?.click(); }} className="w-full p-4 bg-gray-50 rounded-xl text-left hover:bg-gray-100 flex items-center gap-3 transition-colors"><span className="text-2xl">📄</span><span className="font-medium text-gray-800">Import PDF</span></button>
+          <button onClick={() => { inputRef.current?.removeAttribute('capture'); inputRef.current?.setAttribute('accept', 'image/*,.pdf,application/pdf'); inputRef.current?.click(); }} className="w-full p-4 bg-gray-50 rounded-xl text-left hover:bg-gray-100 flex items-center gap-3 transition-colors"><span className="text-2xl">📁</span><span className="font-medium text-gray-800">Import from Files</span></button>
+          <input ref={inputRef} type="file" onChange={handleFileChange} className="hidden" />
+        </div>
+      ) : (
       <div className="space-y-4">
         <div><label className="block text-sm font-medium text-gray-700 mb-1">Title *</label><input type="text" value={title} onChange={e => setTitle(e.target.value)} placeholder="e.g., Blood Test" className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:border-[#1B6B4A] outline-none" /></div>
         <div><label className="block text-sm font-medium text-gray-700 mb-1">Type</label><select value={docType} onChange={e => setDocType(e.target.value)} className="w-full px-4 py-2.5 rounded-xl border border-gray-200 bg-white outline-none">{DOC_TYPES.map(t => <option key={t}>{t}</option>)}</select></div>
@@ -95,6 +114,7 @@ function UploadModal({ open, onClose, profileId }: { open: boolean; onClose: () 
         </div>
         <button onClick={handleUpload} disabled={saving || !title.trim()} className="w-full py-3 bg-[#1B6B4A] text-white rounded-xl font-semibold hover:bg-[#175f42] disabled:opacity-50">{saving ? <Loader2 size={20} className="animate-spin mx-auto" /> : 'Upload Record'}</button>
       </div>
+      )}
     </Modal>
   );
 }

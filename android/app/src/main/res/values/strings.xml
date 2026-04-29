@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">CareBinder</string>
+    <string name="title_activity_main">CareBinder</string>
+    <string name="package_name">com.carebinder.app</string>
+    <string name="custom_url_scheme">com.carebinder.app</string>
+</resources>
