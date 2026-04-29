@@ -1,0 +1,23 @@
+{
+  "profiles": [
+    { "id": "p1", "name": "Mom", "type": "parent", "dob": "1955-03-15", "avatarColor": "#7C3AED", "createdAt": "2026-01-01T00:00:00Z" },
+    { "id": "p2", "name": "Kid", "type": "child", "dob": "2020-06-20", "avatarColor": "#2563EB", "createdAt": "2026-01-01T00:00:00Z" }
+  ],
+  "medications": [
+    { "id": "m1", "profileId": "p1", "displayName": "Med A", "strength": "500mg", "instructions": "Take with food", "status": "active", "asNeeded": false, "createdAt": "2026-01-01T00:00:00Z" },
+    { "id": "m2", "profileId": "p1", "displayName": "Med B", "strength": "10mg", "instructions": "At bedtime", "status": "paused", "asNeeded": false, "createdAt": "2026-01-01T00:00:00Z" }
+  ],
+  "schedules": [
+    { "id": "s1", "medicationId": "m1", "times": ["08:00", "20:00"], "days": [0,1,2,3,4,5,6] },
+    { "id": "s2", "medicationId": "m2", "times": ["22:00"], "days": [1,3,5] }
+  ],
+  "records": [
+    { "id": "r1", "profileId": "p1", "title": "Blood Test", "docType": "Lab Result", "provider": "City Clinic", "date": "2026-04-20", "tags": ["cholesterol"], "status": "ready", "uploadProgress": 100, "offlinePinned": true, "blobKey": "bk1", "createdAt": "2026-04-20T00:00:00Z" }
+  ],
+  "emergencyCards": [
+    { "id": "e1", "profileId": "p1", "name": "Mom", "dob": "1955-03-15", "allergies": ["Penicillin"], "medications": ["Med A 500mg"], "conditions": ["Hypertension"], "emergencyContacts": [{"name": "Jane", "phone": "555-1234", "relationship": "daughter"}], "primaryPhysician": "Dr. Smith", "insuranceInfo": "Blue Cross #123", "lastSynced": "2026-05-01T00:00:00Z", "offlineAvailable": true }
+  ],
+  "updates": [
+    { "id": "u1", "profileId": "p1", "type": "extraction_complete", "message": "Document processed", "timestamp": "2026-05-01T10:00:00Z", "read": false }
+  ]
+}

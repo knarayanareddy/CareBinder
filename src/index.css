@@ -1,0 +1,44 @@
+@import "tailwindcss";
+
+@theme {
+  --color-primary-500: #1B6B4A;
+  --color-primary-600: #175f42;
+  --color-primary-100: #c2e6cb;
+  --color-primary-50: #e6f4ea;
+}
+
+@keyframes shimmer {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(100%); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.animate-shimmer { animation: shimmer 1.5s infinite ease-in-out; }
+.animate-fade-in { animation: fadeIn 0.3s ease-out; }
+.animate-slide-up { animation: slideUp 0.3s ease-out; }
+
+.skeleton-block {
+  position: relative; overflow: hidden; background: #e2e5ee; border-radius: 8px;
+}
+.skeleton-block::after {
+  content: ''; position: absolute; inset: 0;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.4), transparent);
+  animation: shimmer 1.5s infinite ease-in-out;
+}
+
+html, body, #root { height: 100%; margin: 0; padding: 0; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+
+::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar-thumb { background: #c1c5d0; border-radius: 4px; }
+
+button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible {
+  outline: 2px solid #1B6B4A; outline-offset: 2px; border-radius: 4px;
+}
