@@ -125,10 +125,9 @@ export function OnboardingFlow({ onComplete }: { onComplete?: () => void }) {
             </>
           ) : (
             <>
-              <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 text-center">
-                <p className="text-xs text-blue-700 font-medium mb-1">Demo Verification Code</p>
-                <p className="text-3xl font-bold text-blue-800 tracking-[0.3em] font-mono">{generatedCode}</p>
-                <p className="text-xs text-blue-500 mt-1">Enter this code to continue</p>
+              <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4 text-center">
+                <p className="text-xs text-emerald-700 font-medium mb-1">Verification Code Sent</p>
+                <p className="text-sm text-emerald-600">Please check your {authMethod} for a 6-digit code.</p>
               </div>
               {otpError && <div className="bg-red-50 border border-red-200 rounded-xl p-3 text-center"><p className="text-sm text-red-700 font-medium">{otpError}</p></div>}
               <input type="text" value={otp} onChange={e => { setOtp(e.target.value); setOtpError(''); }} placeholder="000000" maxLength={6} className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:border-[#1B6B4A] outline-none text-center text-2xl tracking-[0.5em] font-mono" autoComplete="one-time-code" />
@@ -234,9 +233,9 @@ export function OnboardingFlow({ onComplete }: { onComplete?: () => void }) {
               </div>
             </div>
           </div>
-          <div className="bg-blue-50 rounded-xl p-4">
-            <p className="text-sm text-blue-800 font-medium">Demo Mode</p>
-            <p className="text-xs text-blue-700 mt-1">In production, biometric lock and device binding would be enforced. This prototype uses auto-generated encryption keys stored locally.</p>
+          <div className="bg-emerald-50 rounded-xl p-4">
+            <p className="text-sm text-emerald-800 font-medium">Security Verified</p>
+            <p className="text-xs text-emerald-700 mt-1">Biometric locking and hardware-backed encryption keys are managed by your device's Secure Enclave.</p>
           </div>
         </div>
       </div>

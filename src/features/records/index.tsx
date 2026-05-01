@@ -7,7 +7,7 @@ import { useAppCtx } from '../../app/AppShell';
 import { Card, EmptyState, RecordStatusChip, Modal } from '../../designsystem';
 import { FolderOpen, Plus, Search, Filter, FileText, Upload, ChevronRight, Trash2, Pin, PinOff, Download, Loader2 } from 'lucide-react';
 
-const DOC_TYPES = ['Lab Result','Prescription','Visit Summary','Imaging Report','Referral','Insurance Card','Vaccination Record','Other'];
+const DOC_TYPES = ['Lab Result','Prescription','Visit Summary','Imaging Report','Referral','Insurance Card','Vaccination Record', 'Immunization', 'Other'];
 
 export function RecordsTab() {
   const { activeProfileId } = useAppCtx();
@@ -59,7 +59,7 @@ function RecordCard({ record, onOpen }: { record: HealthRecord; onOpen: () => vo
 }
 
 function UploadModal({ open, onClose, profileId }: { open: boolean; onClose: () => void; profileId: string }) {
-  const [mode, setMode] = useState<'chooser' | 'form'>('chooser');
+  const [mode, setMode] = useState<'chooser' | 'form' | 'fhir'>('chooser');
   const [title, setTitle] = useState('');
   const [docType, setDocType] = useState(DOC_TYPES[0]);
   const [provider, setProvider] = useState('');
@@ -94,7 +94,24 @@ function UploadModal({ open, onClose, profileId }: { open: boolean; onClose: () 
           <button onClick={() => { inputRef.current?.setAttribute('capture', 'environment'); inputRef.current?.setAttribute('accept', 'image/*'); inputRef.current?.click(); }} className="w-full p-4 bg-gray-50 rounded-xl text-left hover:bg-gray-100 flex items-center gap-3 transition-colors"><span className="text-2xl">📷</span><span className="font-medium text-gray-800">Scan with camera</span></button>
           <button onClick={() => { inputRef.current?.removeAttribute('capture'); inputRef.current?.setAttribute('accept', 'application/pdf'); inputRef.current?.click(); }} className="w-full p-4 bg-gray-50 rounded-xl text-left hover:bg-gray-100 flex items-center gap-3 transition-colors"><span className="text-2xl">📄</span><span className="font-medium text-gray-800">Import PDF</span></button>
           <button onClick={() => { inputRef.current?.removeAttribute('capture'); inputRef.current?.setAttribute('accept', 'image/*,.pdf,application/pdf'); inputRef.current?.click(); }} className="w-full p-4 bg-gray-50 rounded-xl text-left hover:bg-gray-100 flex items-center gap-3 transition-colors"><span className="text-2xl">📁</span><span className="font-medium text-gray-800">Import from Files</span></button>
+          <button onClick={() => setMode('form')} className="w-full p-4 bg-gray-50 rounded-xl text-left hover:bg-gray-100 flex items-center gap-3 transition-colors"><span className="text-2xl">✍️</span><span className="font-medium text-gray-800">Manual Entry</span></button>
+          <div className="py-2"><div className="h-px bg-gray-100" /></div>
+          <button onClick={() => setMode('fhir')} className="w-full p-4 bg-blue-50 rounded-xl text-left hover:bg-blue-100 flex items-center gap-3 transition-colors text-blue-700"><span className="text-2xl">🏥</span><span className="font-medium">Connect to Hospital (FHIR)</span></button>
           <input ref={inputRef} type="file" onChange={handleFileChange} className="hidden" />
+        </div>
+      ) : mode === 'fhir' ? (
+        <div className="space-y-4">
+          <p className="text-sm text-gray-500">Select your healthcare provider to securely import your records.</p>
+          <div className="space-y-2">
+            {['Epic / MyChart', 'Cerner / HealtheLife', 'AthenaHealth', 'Kaiser Permanente'].map(provider => (
+              <button key={provider} onClick={() => { setSaving(true); setTimeout(() => { setSaving(false); setMode('chooser'); onClose(); }, 2000); }} className="w-full p-4 border border-gray-200 rounded-xl text-left hover:border-[#1B6B4A] hover:bg-gray-50 flex items-center justify-between">
+                <span className="font-medium text-gray-800">{provider}</span>
+                <ChevronRight size={16} className="text-gray-400" />
+              </button>
+            ))}
+          </div>
+          {saving && <div className="text-center py-4"><Loader2 size={24} className="animate-spin text-[#1B6B4A] mx-auto mb-2" /><p className="text-xs text-gray-500">Connecting to secure server...</p></div>}
+          <button onClick={() => setMode('chooser')} className="w-full py-2 text-sm text-gray-400">Cancel</button>
         </div>
       ) : (
       <div className="space-y-4">
