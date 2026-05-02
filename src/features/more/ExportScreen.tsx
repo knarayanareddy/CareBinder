@@ -1,11 +1,13 @@
 import { useState } from 'react';
 import { useAppCtx } from '../../app/AppShell';
+import { useToast } from '../../core/toast';
 import { Modal } from '../../designsystem';
 import { Loader2, Check, Download } from 'lucide-react';
 import { db } from '../../core/db';
 
 export function ExportScreen({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { activeProfileId } = useAppCtx();
+  const { toast } = useToast();
   const [exporting, setExporting] = useState(false);
   const [done, setDone] = useState(false);
 
@@ -38,7 +40,9 @@ export function ExportScreen({ open, onClose }: { open: boolean; onClose: () => 
       a.click();
       URL.revokeObjectURL(url);
       setDone(true);
-    } catch {}
+    } catch (e: any) {
+      toast(e?.message || 'Export failed', 'error');
+    }
     setExporting(false);
   };
 

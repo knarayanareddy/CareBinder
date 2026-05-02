@@ -17,7 +17,7 @@ export function AppointmentForm({ open, onClose, profileId, onCreated }: {
   const handleSave = async () => {
     if (!purpose.trim()) return;
     setSaving(true);
-    await api.createAppointment(profileId, { date, time, provider: provider || undefined, purpose: purpose.trim() });
+    await api.createAppointment(profileId, { date, time, provider: provider || undefined, purpose: purpose.trim(), notes: notes.trim() || undefined });
     setSaving(false);
     setPurpose(''); setProvider(''); setNotes('');
     onCreated();

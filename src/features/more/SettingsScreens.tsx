@@ -1,20 +1,62 @@
 import { useState } from 'react';
 import { Modal } from '../../designsystem';
-import { Bell, Moon, Sun, Volume2, VolumeX } from 'lucide-react';
+import { Bell, Moon, Sun, Volume2, VolumeX, AlertCircle, CheckCircle2 } from 'lucide-react';
 import { cn } from '../../utils/cn';
+import { getNotifPref, setNotifPref, requestAndSchedule, clearAllReminders } from '../../core/notifications';
 
-export function NotificationPrefs({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const [doseReminders, setDoseReminders] = useState(true);
-  const [teamUpdates, setTeamUpdates] = useState(true);
-  const [recordUpdates, setRecordUpdates] = useState(true);
-  const [sound, setSound] = useState(true);
+export function NotificationPrefs({ open, onClose, profileId }: { open: boolean; onClose: () => void; profileId: string }) {
+  const [doseReminders, setDoseReminders] = useState(() => getNotifPref('doses'));
+  const [teamUpdates, setTeamUpdates] = useState(() => getNotifPref('teamUpdates'));
+  const [recordUpdates, setRecordUpdates] = useState(() => getNotifPref('recordUpdates'));
+  const [sound, setSound] = useState(() => getNotifPref('sound'));
+  const [permStatus, setPermStatus] = useState<'unknown' | 'granted' | 'denied'>(() => {
+    if (!('Notification' in window)) return 'unknown';
+    return Notification.permission === 'granted' ? 'granted' : Notification.permission === 'denied' ? 'denied' : 'unknown';
+  });
 
-  const requestPermission = async () => {
-    if ('Notification' in window) {
-      const result = await Notification.requestPermission();
-      if (result !== 'granted') {
-        alert('Notifications permission denied. You can enable them in your browser settings.');
+  const handleDoseToggle = async () => {
+    const next = !doseReminders;
+    setDoseReminders(next);
+    setNotifPref('doses', next);
+    if (next) {
+      const granted = await requestAndSchedule(profileId);
+      if (granted) {
+        setPermStatus('granted');
+      } else {
+        setDoseReminders(false);
+        setNotifPref('doses', false);
+        setPermStatus(Notification.permission === 'denied' ? 'denied' : 'unknown');
       }
+    } else {
+      clearAllReminders();
+    }
+  };
+
+  const handleTeamToggle = () => {
+    const next = !teamUpdates;
+    setTeamUpdates(next);
+    setNotifPref('teamUpdates', next);
+  };
+
+  const handleRecordToggle = () => {
+    const next = !recordUpdates;
+    setRecordUpdates(next);
+    setNotifPref('recordUpdates', next);
+  };
+
+  const handleSoundToggle = () => {
+    const next = !sound;
+    setSound(next);
+    setNotifPref('sound', next);
+  };
+
+  const handleEnablePermission = async () => {
+    const granted = await requestAndSchedule(profileId);
+    if (granted) {
+      setPermStatus('granted');
+      setDoseReminders(true);
+    } else {
+      setPermStatus(Notification.permission === 'denied' ? 'denied' : 'unknown');
     }
   };
 
@@ -22,16 +64,34 @@ export function NotificationPrefs({ open, onClose }: { open: boolean; onClose: (
     <Modal open={open} onClose={onClose} title="Notifications">
       <div className="space-y-4">
         <p className="text-sm text-gray-500">Configure which notifications you receive for this profile.</p>
+
+        {permStatus === 'denied' && (
+          <div className="flex items-start gap-2 bg-red-50 rounded-xl p-3">
+            <AlertCircle size={16} className="text-red-600 shrink-0 mt-0.5" />
+            <p className="text-xs text-red-700">Notifications are blocked. Enable them in your browser or device settings, then reopen this screen.</p>
+          </div>
+        )}
+        {permStatus === 'granted' && (
+          <div className="flex items-center gap-2 bg-emerald-50 rounded-xl p-3">
+            <CheckCircle2 size={16} className="text-emerald-600" />
+            <p className="text-xs text-emerald-700">Notifications are enabled.</p>
+          </div>
+        )}
+
         <div className="space-y-3">
-          <ToggleRow icon={<Bell size={18} />} label="Dose Reminders" desc="Get reminded when medications are due" checked={doseReminders} onToggle={() => setDoseReminders(!doseReminders)} />
-          <ToggleRow icon={<Bell size={18} />} label="Care Team Updates" desc="Invites, permission changes" checked={teamUpdates} onToggle={() => setTeamUpdates(!teamUpdates)} />
-          <ToggleRow icon={<Bell size={18} />} label="Record Processing" desc="Extraction complete, upload status" checked={recordUpdates} onToggle={() => setRecordUpdates(!recordUpdates)} />
-          <ToggleRow icon={sound ? <Volume2 size={18} /> : <VolumeX size={18} />} label="Sound" desc="Play sound with notifications" checked={sound} onToggle={() => setSound(!sound)} />
+          <ToggleRow icon={<Bell size={18} />} label="Dose Reminders" desc="Get reminded when medications are due" checked={doseReminders} onToggle={handleDoseToggle} />
+          <ToggleRow icon={<Bell size={18} />} label="Care Team Updates" desc="Invites, permission changes" checked={teamUpdates} onToggle={handleTeamToggle} />
+          <ToggleRow icon={<Bell size={18} />} label="Record Processing" desc="Extraction complete, upload status" checked={recordUpdates} onToggle={handleRecordToggle} />
+          <ToggleRow icon={sound ? <Volume2 size={18} /> : <VolumeX size={18} />} label="Sound" desc="Play sound with notifications" checked={sound} onToggle={handleSoundToggle} />
         </div>
-        <button onClick={requestPermission} className="w-full py-2.5 bg-[#1B6B4A] text-white rounded-xl font-medium text-sm hover:bg-[#175f42] transition-colors">
-          Enable Browser Notifications
-        </button>
-        <p className="text-xs text-gray-400 text-center">Reminders require notifications permission. If the browser restricts background timers, reminders may only fire when the app is open.</p>
+
+        {permStatus !== 'granted' && permStatus !== 'denied' && (
+          <button onClick={handleEnablePermission} className="w-full py-2.5 bg-[#1B6B4A] text-white rounded-xl font-medium text-sm hover:bg-[#175f42] transition-colors">
+            Enable Browser Notifications
+          </button>
+        )}
+
+        <p className="text-xs text-gray-400 text-center">Reminders fire while the app is open or installed as a PWA. True background push requires server integration.</p>
       </div>
     </Modal>
   );

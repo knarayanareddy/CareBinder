@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { cn } from '../../utils/cn';
 import { api, startJobRunner } from '../../core/api';
 import { useAppCtx } from '../../app/AppShell';
+import { PrivacyScreen } from '../more/PrivacyScreen';
 import { Shield, Bell, Camera, Lock, Phone, Mail, ChevronRight, User, Baby, Users as UsersIcon, UserPlus, Check, Loader2, AlertCircle } from 'lucide-react';
 
 export function OnboardingFlow({ onComplete }: { onComplete?: () => void }) {
@@ -21,31 +22,37 @@ export function OnboardingFlow({ onComplete }: { onComplete?: () => void }) {
   const [profileName, setProfileName] = useState('');
   const [profileDob, setProfileDob] = useState('');
   const [error, setError] = useState('');
+  const [showPrivacy, setShowPrivacy] = useState(false);
 
   const handleSendCode = async () => {
-    if (!phone && !email) return;
+    if (authMethod === 'phone' && !phone) return;
+    if (authMethod === 'email' && !email) return;
     setLoading(true);
     setError('');
     try {
-      const { code } = await api.authStart(authMethod, authMethod === 'phone' ? phone : email);
-      setGeneratedCode(code);
+      if (authMethod === 'phone') {
+        await api.startPhoneAuth(phone);
+        setGeneratedCode('PHONE_AUTH_PENDING');
+      } else {
+        await api.startEmailAuth(email);
+        setGeneratedCode('EMAIL_LINK_SENT');
+      }
     } catch (e: any) {
-      setError(e?.message || 'Failed to send code');
+      setError(e?.message || 'Failed to send verification');
     }
     setLoading(false);
   };
 
   const handleVerify = async () => {
-    if (otp !== generatedCode) { setOtpError('Invalid code. Try again.'); return; }
     setOtpError('');
     setLoading(true);
     setError('');
     try {
-      const { userId } = await api.authVerify(otp);
+      const userId = await api.verifyPhoneOtp(otp);
       login(userId);
       setStep('profile');
     } catch (e: any) {
-      setError(e?.message || 'Verification failed');
+      setOtpError(e?.message || 'Invalid code. Try again.');
     }
     setLoading(false);
   };
@@ -119,15 +126,26 @@ export function OnboardingFlow({ onComplete }: { onComplete?: () => void }) {
               {authMethod === 'phone'
                 ? <input type="tel" value={phone} onChange={e => setPhone(e.target.value)} placeholder="+1 (555) 000-0000" className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:border-[#1B6B4A] outline-none text-lg" />
                 : <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="you@example.com" className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:border-[#1B6B4A] outline-none" />}
-              <button onClick={handleSendCode} disabled={loading || (!phone && !email)} className="w-full py-3 bg-[#1B6B4A] text-white rounded-xl font-semibold hover:bg-[#175f42] disabled:opacity-50 transition-colors">
+              <button onClick={handleSendCode} disabled={loading || (authMethod === 'phone' ? !phone : !email)} className="w-full py-3 bg-[#1B6B4A] text-white rounded-xl font-semibold hover:bg-[#175f42] disabled:opacity-50 transition-colors">
                 {loading ? <Loader2 size={20} className="animate-spin mx-auto" /> : 'Send Verification Code'}
               </button>
+              <div id="recaptcha-container" />
+            </>
+          ) : generatedCode === 'EMAIL_LINK_SENT' ? (
+            <>
+              <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-6 text-center">
+                <div className="text-4xl mb-3">📧</div>
+                <p className="font-semibold text-emerald-800 mb-2">Check your email</p>
+                <p className="text-sm text-emerald-700">We sent a sign-in link to <strong>{email}</strong>. Open the link on this device to continue.</p>
+                <p className="text-xs text-emerald-600 mt-3">Link expires in 1 hour. Check your spam folder if you don't see it.</p>
+              </div>
+              <button onClick={() => setGeneratedCode('')} className="w-full py-2 text-sm text-gray-500">Use a different email</button>
             </>
           ) : (
             <>
               <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4 text-center">
                 <p className="text-xs text-emerald-700 font-medium mb-1">Verification Code Sent</p>
-                <p className="text-sm text-emerald-600">Please check your {authMethod} for a 6-digit code.</p>
+                <p className="text-sm text-emerald-600">Please check your phone for a 6-digit code.</p>
               </div>
               {otpError && <div className="bg-red-50 border border-red-200 rounded-xl p-3 text-center"><p className="text-sm text-red-700 font-medium">{otpError}</p></div>}
               <input type="text" value={otp} onChange={e => { setOtp(e.target.value); setOtpError(''); }} placeholder="000000" maxLength={6} className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:border-[#1B6B4A] outline-none text-center text-2xl tracking-[0.5em] font-mono" autoComplete="one-time-code" />
@@ -137,7 +155,8 @@ export function OnboardingFlow({ onComplete }: { onComplete?: () => void }) {
             </>
           )}
         </div>
-        <p className="text-xs text-gray-400 mt-6 text-center">By continuing, you agree to our Privacy Policy.</p>
+        <p className="text-xs text-gray-400 mt-6 text-center">By continuing, you agree to our <button onClick={() => setShowPrivacy(true)} className="underline">Privacy Policy</button>.</p>
+        <PrivacyScreen open={showPrivacy} onClose={() => setShowPrivacy(false)} />
       </div>
       {ErrorBar}
     </div>
@@ -162,7 +181,7 @@ export function OnboardingFlow({ onComplete }: { onComplete?: () => void }) {
             ] as [string, string, typeof User][]).map(([t, l, I]) => (
               <button
                 key={t}
-                onClick={() => setProfileType(t as any)}
+                onClick={() => setProfileType(t as 'self' | 'child' | 'parent' | 'other')}
                 className={cn(
                   'flex flex-col items-center gap-2 py-4 rounded-xl border-2 transition-colors',
                   profileType === t ? 'border-[#1B6B4A] bg-[#e6f4ea] text-[#1B6B4A]' : 'border-gray-100 bg-gray-50 text-gray-500 hover:border-gray-200'
@@ -204,7 +223,7 @@ export function OnboardingFlow({ onComplete }: { onComplete?: () => void }) {
       <div className="p-6 border-t border-gray-100">
         <button
           onClick={handleCreateProfile}
-          disabled={loading || !profileName.trim() || !profileDob}
+          disabled={loading || !profileName.trim()}
           className="w-full py-3 bg-[#1B6B4A] text-white rounded-xl font-semibold hover:bg-[#175f42] disabled:opacity-50 flex items-center justify-center gap-2 transition-colors"
         >
           {loading ? <Loader2 size={20} className="animate-spin" /> : <ChevronRight size={18} />}

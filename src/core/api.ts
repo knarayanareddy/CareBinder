@@ -4,6 +4,14 @@ import type {
   Profile, Medication, MedSchedule, DoseEvent, HealthRecord,
   Job, CareTeamMember, Invite, EmergencyCard, UpdateItem, Permissions, Problem,
 } from './schemas';
+import type { ConfirmationResult } from 'firebase/auth';
+import {
+  RecaptchaVerifier, signInWithPhoneNumber, sendSignInLinkToEmail,
+  isSignInWithEmailLink, signInWithEmailLink, onAuthStateChanged, signOut,
+} from 'firebase/auth';
+import { ref, uploadBytesResumable } from 'firebase/storage';
+import { auth, storage } from './firebase';
+import { syncSubDoc, syncProfileDoc, deleteSubDoc, registerProfileForUser } from './firestoreSync';
 export type {
   Profile, Medication, MedSchedule, DoseEvent, HealthRecord,
   Job, CareTeamMember, Invite, EmergencyCard, UpdateItem, Permissions, Problem,
@@ -161,45 +169,84 @@ class LocalApi {
   restoreActiveProfile() { /* no-op: profile ID managed by React state */ }
 
   // ── AUTH ──────────────────────────────
-  async authStart(method: 'phone' | 'email', value: string): Promise<{ code: string }> {
-    const code = String(Math.floor(100000 + Math.random() * 900000));
-    sessionStorage.setItem('cb_auth', JSON.stringify({ method, value, code }));
-    return { code };
+  private _confirmationResult: ConfirmationResult | null = null;
+
+  async startPhoneAuth(phone: string): Promise<void> {
+    if ((window as any).__cbRecaptcha) {
+      try { (window as any).__cbRecaptcha.clear(); } catch {}
+    }
+    const verifier = new RecaptchaVerifier(auth, 'recaptcha-container', { size: 'invisible' });
+    (window as any).__cbRecaptcha = verifier;
+    this._confirmationResult = await signInWithPhoneNumber(auth, phone, verifier);
   }
 
-  async authVerify(code: string): Promise<{ userId: string }> {
-    const raw = sessionStorage.getItem('cb_auth');
-    if (!raw) throw new ApiError(400, '/errors/no-auth', 'No pending authentication');
-    const { method, value, code: stored } = JSON.parse(raw);
-    if (code !== stored) throw new ApiError(401, '/errors/invalid-code', 'Invalid verification code');
-    let user = await db.users.toCollection().first();
-    if (!user) {
+  async startEmailAuth(email: string): Promise<void> {
+    await sendSignInLinkToEmail(auth, email, {
+      url: 'https://carebinder-f27df.web.app',
+      handleCodeInApp: true,
+    });
+    localStorage.setItem('cb_email_for_link', email);
+  }
+
+  async verifyPhoneOtp(code: string): Promise<string> {
+    if (!this._confirmationResult) throw new ApiError(400, '/errors/no-auth', 'No pending verification');
+    const { user } = await this._confirmationResult.confirm(code);
+    this._confirmationResult = null;
+    this._userId = user.uid;
+    await this._ensureLocalUser(user.uid);
+    return user.uid;
+  }
+
+  async completeEmailLinkAuth(): Promise<string | null> {
+    if (!isSignInWithEmailLink(auth, window.location.href)) return null;
+    const email = localStorage.getItem('cb_email_for_link') ?? '';
+    if (!email) return null;
+    const { user } = await signInWithEmailLink(auth, email, window.location.href);
+    localStorage.removeItem('cb_email_for_link');
+    window.history.replaceState({}, document.title, window.location.pathname);
+    this._userId = user.uid;
+    await this._ensureLocalUser(user.uid);
+    return user.uid;
+  }
+
+  private async _ensureLocalUser(uid: string): Promise<void> {
+    const existing = await db.users.toCollection().first();
+    if (!existing) {
       const salt = crypto.getRandomValues(new Uint8Array(16));
-      user = { id: uid(), authMethod: method, authValue: value, salt: Array.from(salt).join(','), createdAt: now() };
-      await db.users.add(user);
+      await db.users.add({ id: uid, authMethod: 'phone', authValue: '', salt: Array.from(salt).join(','), createdAt: now() });
     }
-    this._userId = user.id;
-    sessionStorage.removeItem('cb_auth');
-    return { userId: user.id };
   }
 
   async restoreSession(): Promise<string | null> {
-    try {
-      const user = await db.users.toCollection().first();
-      if (user) { this._userId = user.id; this.restoreActiveProfile(); return user.id; }
-      return null;
-    } catch {
-      // DB might be corrupted from a previous version — delete and start fresh
-      try { await db.delete(); } catch {}
-      return null;
-    }
+    return new Promise((resolve) => {
+      const unsub = onAuthStateChanged(auth, async (user) => {
+        unsub();
+        if (user) {
+          this._userId = user.uid;
+          await this._ensureLocalUser(user.uid);
+          this.restoreActiveProfile();
+          resolve(user.uid);
+        } else {
+          resolve(null);
+        }
+      });
+    });
   }
 
-  async logout() {
+  async logout(): Promise<void> {
     this._userId = null;
     this._activeProfileId = null;
-    try { await db.delete(); } catch {}
+    await signOut(auth);
     try { localStorage.removeItem('cb_dk'); } catch {}
+    try { sessionStorage.clear(); } catch {}
+  }
+
+  async wipeAllData(): Promise<void> {
+    this._userId = null;
+    this._activeProfileId = null;
+    await signOut(auth).catch(() => {});
+    try { await db.delete(); } catch {}
+    try { localStorage.clear(); } catch {}
     try { sessionStorage.clear(); } catch {}
   }
 
@@ -210,6 +257,8 @@ class LocalApi {
     const colors = ['#1B6B4A','#2563EB','#7C3AED','#DC2626','#D97706','#059669'];
     const profile: Profile = { id: uid(), name: data.name, type: data.type, dob: data.dob, avatarColor: colors[Math.floor(Math.random() * colors.length)], createdAt: now() };
     await db.profiles.add(profile);
+    syncProfileDoc(profile.id, { ...profile, ownerId: this._userId ?? '' });
+    if (this._userId) registerProfileForUser(this._userId, profile.id);
     await db.emergencyCards.add({ id: uid(), profileId: profile.id, name: profile.name, dob: profile.dob, allergies: [], medications: [], conditions: [], emergencyContacts: [], offlineAvailable: true, lastSynced: now() });
     await db.careTeamMembers.add({ id: uid(), profileId: profile.id, name: 'You', role: 'owner', invitedAt: now(), acceptedAt: now() });
     if (!this._activeProfileId) this.setActiveProfile(profile.id);
@@ -238,12 +287,28 @@ class LocalApi {
   async listMedications(profileId: string): Promise<Medication[]> { return profileId ? db.medications.where('profileId').equals(profileId).toArray() : []; }
   async getMedSchedule(medId: string): Promise<MedSchedule | undefined> { return db.medSchedules.where('medicationId').equals(medId).first(); }
 
+  async patchMedSchedule(medId: string, times: string[], days: number[], profileId?: string): Promise<MedSchedule> {
+    const existing = await db.medSchedules.where('medicationId').equals(medId).first();
+    if (existing) {
+      await db.medSchedules.update(existing.id, { times, days });
+      const updated = (await db.medSchedules.get(existing.id))!;
+      if (profileId) syncSubDoc(profileId, 'medSchedules', existing.id, updated as any);
+      return updated;
+    }
+    const schedule: MedSchedule = { id: uid(), medicationId: medId, times, days };
+    await db.medSchedules.add(schedule);
+    if (profileId) syncSubDoc(profileId, 'medSchedules', schedule.id, schedule as any);
+    return schedule;
+  }
+
   async createMedication(profileId: string, data: { displayName: string; strength: string; instructions: string; asNeeded: boolean; times: string[]; days: number[] }): Promise<{ medication: Medication; schedule: MedSchedule }> {
     await requirePermission(profileId, 'canEditSchedules');
     const med: Medication = { id: uid(), profileId, displayName: data.displayName, strength: data.strength, instructions: data.instructions || 'Take as directed', status: 'active', asNeeded: data.asNeeded, createdAt: now() };
     await db.medications.add(med);
+    syncSubDoc(profileId, 'medications', med.id, med as any);
     const schedule: MedSchedule = { id: uid(), medicationId: med.id, times: data.times, days: data.days };
     await db.medSchedules.add(schedule);
+    syncSubDoc(profileId, 'medSchedules', schedule.id, schedule as any);
     await db.auditEvents.add({ id: uid(), profileId, action: 'medication_created', details: {}, timestamp: now() });
     return { medication: med, schedule };
   }
@@ -266,6 +331,7 @@ class LocalApi {
     await requirePermission(data.profileId, 'canLogDoses');
     const event: DoseEvent = { id: uid(), ...data, takenAt: now(), synced: navigator.onLine };
     await db.doseEvents.add(event);
+    syncSubDoc(data.profileId, 'doseEvents', event.id, event as any);
     return event;
   }
 
@@ -283,15 +349,19 @@ class LocalApi {
 
   async createRecord(profileId: string, data: { title: string; docType: string; provider?: string; date?: string; tags?: string[]; blobKey?: string }, file?: File): Promise<HealthRecord> {
     await requirePermission(profileId, 'canAddRecords');
-    const record: HealthRecord = { id: uid(), profileId, title: data.title, docType: data.docType, provider: data.provider, date: data.date, tags: data.tags ?? [], status: 'uploading', uploadProgress: 0, offlinePinned: false, blobKey: data.blobKey, createdAt: now() };
+    const blobKey = data.blobKey ?? uid();
+    const record: HealthRecord = { id: uid(), profileId, title: data.title, docType: data.docType, provider: data.provider, date: data.date, tags: data.tags ?? [], status: 'uploading', uploadProgress: 0, offlinePinned: false, blobKey, createdAt: now() };
     await db.records.add(record);
-    if (file && data.blobKey) {
+    syncSubDoc(profileId, 'records', record.id, record as any);
+    if (file) {
       const ab = await file.arrayBuffer();
       const { iv, ciphertext } = await encryptBlob(ab);
-      await db.recordBlobs.add({ id: data.blobKey, recordId: record.id, encryptedData: ciphertext, iv, mimeType: file.type, pageCount: 1 });
+      await db.recordBlobs.add({ id: blobKey, recordId: record.id, encryptedData: ciphertext, iv, mimeType: file.type, pageCount: 1 });
+      this._uploadToStorage(record.id, profileId, blobKey, ciphertext, iv, file.type);
+    } else {
+      // No file — simulate upload for extraction demo
+      this.simulateUpload(record.id, profileId);
     }
-    // Simulate upload then start extraction job
-    this.simulateUpload(record.id, profileId);
     return record;
   }
 
@@ -302,6 +372,29 @@ class LocalApi {
       if (p >= 100) { p = 100; clearInterval(iv); await db.records.update(recordId, { uploadProgress: 100, status: 'extracting' }); await this.createExtractionJob(profileId, recordId); }
       else await db.records.update(recordId, { uploadProgress: Math.round(p) });
     }, 400);
+  }
+
+  private async _uploadToStorage(recordId: string, profileId: string, blobKey: string, ciphertext: ArrayBuffer, iv: Uint8Array, mimeType: string): Promise<void> {
+    try {
+      const storageRef = ref(storage, `records/${this._userId}/${blobKey}`);
+      const blob = new Blob([ciphertext], { type: 'application/octet-stream' });
+      const task = uploadBytesResumable(storageRef, blob, {
+        customMetadata: { iv: Array.from(iv).join(','), mimeType },
+      });
+      task.on('state_changed',
+        (snap) => {
+          const progress = Math.round((snap.bytesTransferred / snap.totalBytes) * 100);
+          db.records.update(recordId, { uploadProgress: progress });
+        },
+        async () => { await db.records.update(recordId, { status: 'failed' }); },
+        async () => {
+          await db.records.update(recordId, { status: 'extracting', uploadProgress: 100 });
+          await this.createExtractionJob(profileId, recordId);
+        }
+      );
+    } catch {
+      await db.records.update(recordId, { status: 'failed' });
+    }
   }
 
   async listRecords(profileId: string, filters?: { docType?: string; query?: string }): Promise<HealthRecord[]> {
@@ -318,10 +411,47 @@ class LocalApi {
     await db.records.update(recordId, updates);
     const r = await db.records.get(recordId);
     if (!r) throw new ApiError(404, '/errors/not-found', 'Record not found');
+    syncSubDoc(r.profileId, 'records', recordId, r as any);
     return r;
   }
 
-  async deleteRecord(recordId: string): Promise<void> { await db.recordBlobs.where('recordId').equals(recordId).delete(); await db.records.delete(recordId); }
+  async deleteRecord(recordId: string): Promise<void> {
+    const record = await db.records.get(recordId);
+    if (record) deleteSubDoc(record.profileId, 'records', recordId);
+    await db.recordBlobs.where('recordId').equals(recordId).delete();
+    await db.records.delete(recordId);
+  }
+
+  async fhirImport(
+    profileId: string,
+    records: { title: string; docType: string; provider: string; date: string; tags: string[] }[],
+    medications: { displayName: string; strength: string; instructions: string; times: string[]; days: number[] }[],
+  ): Promise<{ recordCount: number; medCount: number }> {
+    if (records.length > 0) await requirePermission(profileId, 'canAddRecords');
+    if (medications.length > 0) await requirePermission(profileId, 'canEditSchedules');
+
+    for (const r of records) {
+      const rec: HealthRecord = { id: uid(), profileId, title: r.title, docType: r.docType, provider: r.provider, date: r.date, tags: r.tags, status: 'extracting', uploadProgress: 100, offlinePinned: false, createdAt: now() };
+      await db.records.add(rec);
+      await this.createExtractionJob(profileId, rec.id);
+    }
+
+    for (const m of medications) {
+      const med: Medication = { id: uid(), profileId, displayName: m.displayName, strength: m.strength, instructions: m.instructions, status: 'active', asNeeded: false, createdAt: now() };
+      await db.medications.add(med);
+      await db.medSchedules.add({ id: uid(), medicationId: med.id, times: m.times, days: m.days });
+      await db.auditEvents.add({ id: uid(), profileId, action: 'medication_created', details: {}, timestamp: now() });
+    }
+
+    if (records.length + medications.length > 0) {
+      const parts: string[] = [];
+      if (records.length > 0) parts.push(`${records.length} record${records.length > 1 ? 's' : ''}`);
+      if (medications.length > 0) parts.push(`${medications.length} medication${medications.length > 1 ? 's' : ''}`);
+      await db.updates.add({ id: uid(), profileId, type: 'extraction_complete', message: `FHIR import complete: added ${parts.join(' and ')}`, timestamp: now(), read: false });
+    }
+
+    return { recordCount: records.length, medCount: medications.length };
+  }
 
   async createDownloadUrl(recordId: string): Promise<string> {
     const blob = await db.recordBlobs.where('recordId').equals(recordId).first();
@@ -345,6 +475,7 @@ class LocalApi {
   async createInvite(profileId: string, data: { email?: string; phone?: string; role: Invite['role'] }): Promise<Invite> {
     const invite: Invite = { id: uid(), profileId, email: data.email, phone: data.phone, role: data.role, token: uid(), status: 'pending', createdAt: now() };
     await db.careTeamInvites.add(invite);
+    syncSubDoc(profileId, 'invites', invite.id, invite as any);
     await db.auditEvents.add({ id: uid(), profileId, action: 'invite_sent', details: { role: data.role }, timestamp: now() });
     return invite;
   }
@@ -364,7 +495,11 @@ class LocalApi {
     const m = await db.careTeamMembers.get(memberId); if (!m) throw new ApiError(404, '/errors/not-found', 'Member not found'); return m;
   }
 
-  async removeMember(memberId: string): Promise<void> { await db.careTeamMembers.delete(memberId); }
+  async removeMember(memberId: string): Promise<void> {
+    const member = await db.careTeamMembers.get(memberId);
+    if (member) deleteSubDoc(member.profileId, 'careTeamMembers', memberId);
+    await db.careTeamMembers.delete(memberId);
+  }
 
   // ── EMERGENCY CARD ────────────────────
   async getEmergencyCard(profileId: string): Promise<EmergencyCard> {
@@ -379,7 +514,9 @@ class LocalApi {
     if (!card) throw new ApiError(404, '/errors/not-found', 'Emergency card not found');
     await db.emergencyCards.update(card.id, { ...updates, lastSynced: now(), offlineAvailable: true });
     await db.auditEvents.add({ id: uid(), profileId, action: 'emergency_card_updated', details: {}, timestamp: now() });
-    return (await db.emergencyCards.get(card.id))!;
+    const updated = (await db.emergencyCards.get(card.id))!;
+    syncSubDoc(profileId, 'emergencyCards', card.id, updated as any);
+    return updated;
   }
 
   // ── UPDATES ───────────────────────────
@@ -389,14 +526,28 @@ class LocalApi {
 
   // ── TASKS ─────────────────────────────
   async listTasks(profileId: string): Promise<TaskRow[]> { return profileId ? db.tasks.where('profileId').equals(profileId).toArray() : []; }
-  async createTask(profileId: string, title: string, type: TaskRow['type'] = 'other'): Promise<TaskRow> { const t: TaskRow = { id: uid(), profileId, title, type, completed: false, createdAt: now() }; await db.tasks.add(t); return t; }
-  async toggleTask(taskId: string): Promise<void> { const t = await db.tasks.get(taskId); if (t) await db.tasks.update(taskId, { completed: !t.completed }); }
+  async createTask(profileId: string, title: string, type: TaskRow['type'] = 'other'): Promise<TaskRow> {
+    const t: TaskRow = { id: uid(), profileId, title, type, completed: false, createdAt: now() };
+    await db.tasks.add(t);
+    syncSubDoc(profileId, 'tasks', t.id, t as any);
+    return t;
+  }
+  async toggleTask(taskId: string): Promise<void> {
+    const t = await db.tasks.get(taskId);
+    if (t) {
+      await db.tasks.update(taskId, { completed: !t.completed });
+      const updated = await db.tasks.get(taskId);
+      if (updated) syncSubDoc(updated.profileId, 'tasks', taskId, updated as any);
+    }
+  }
 
   // ── APPOINTMENTS ──────────────────────
   async listAppointments(profileId: string): Promise<AppointmentRow[]> { return profileId ? db.appointments.where('profileId').equals(profileId).toArray() : []; }
   async createAppointment(profileId: string, data: { date: string; time: string; provider?: string; purpose: string; questions?: string[]; notes?: string }): Promise<AppointmentRow> {
     const a: AppointmentRow = { id: uid(), profileId, date: data.date, time: data.time, provider: data.provider, purpose: data.purpose, questions: data.questions, notes: data.notes, createdAt: now() };
-    await db.appointments.add(a); return a;
+    await db.appointments.add(a);
+    syncSubDoc(a.profileId, 'appointments', a.id, a as any);
+    return a;
   }
   async getAppointment(appointmentId: string): Promise<AppointmentRow> {
     const a = await db.appointments.get(appointmentId);
@@ -407,6 +558,7 @@ class LocalApi {
     await db.appointments.update(appointmentId, updates);
     const a = await db.appointments.get(appointmentId);
     if (!a) throw new ApiError(404, '/errors/not-found', 'Appointment not found');
+    syncSubDoc(a.profileId, 'appointments', appointmentId, a as any);
     return a;
   }
 

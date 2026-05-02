@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Modal } from '../../designsystem';
 import { api } from '../../core/api';
+import { useToast } from '../../core/toast';
 import type { AppointmentRow } from '../../core/db';
 import { Calendar, Plus, Trash2, Loader2, Save } from 'lucide-react';
 
@@ -16,16 +17,20 @@ export function AppointmentDetailModal({
   const [newQuestion, setNewQuestion] = useState('');
   const [notes, setNotes] = useState('');
   const [saving, setSaving] = useState(false);
+  const [loadError, setLoadError] = useState('');
+  const { toast } = useToast();
 
   useEffect(() => {
     if (appointmentId) {
+      setLoadError('');
       api.getAppointment(appointmentId).then(data => {
         setApt(data);
         setQuestions(data.questions ?? []);
         setNotes(data.notes ?? '');
-      });
+      }).catch(() => setLoadError('Could not load appointment details'));
     } else {
       setApt(null);
+      setLoadError('');
     }
   }, [appointmentId]);
 
@@ -34,9 +39,14 @@ export function AppointmentDetailModal({
   const handleSave = async () => {
     if (!apt) return;
     setSaving(true);
-    await api.patchAppointment(apt.id, { questions, notes });
+    try {
+      await api.patchAppointment(apt.id, { questions, notes });
+      toast('Appointment updated', 'success');
+      onClose();
+    } catch (e: any) {
+      toast(e?.message || 'Failed to save appointment', 'error');
+    }
     setSaving(false);
-    onClose();
   };
 
   const addQuestion = () => {
@@ -52,7 +62,9 @@ export function AppointmentDetailModal({
 
   return (
     <Modal open={!!appointmentId} onClose={onClose} title="Appointment Detail">
-      {!apt ? (
+      {loadError ? (
+        <div className="py-8 text-center text-sm text-red-600">{loadError}</div>
+      ) : !apt ? (
         <div className="py-8 text-center">
           <Loader2 className="animate-spin mx-auto text-gray-400" />
         </div>

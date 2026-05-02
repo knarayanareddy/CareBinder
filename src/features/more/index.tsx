@@ -3,14 +3,18 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { cn } from '../../utils/cn';
 import { api, formatDate } from '../../core/api';
 import { useAppCtx } from '../../app/AppShell';
+import { useToast } from '../../core/toast';
+import { clearAllReminders } from '../../core/notifications';
 import { Card, EmptyState, Modal } from '../../designsystem';
-import { MoreHorizontal, Siren, Shield, Bell, Lock, HelpCircle, ChevronRight, LogOut, UserPlus, Plus, Trash2, Edit3, Loader2, Phone, BellOff, Download } from 'lucide-react';
+import { MoreHorizontal, Siren, Shield, Bell, Lock, HelpCircle, ChevronRight, LogOut, UserPlus, Plus, Trash2, Edit3, Loader2, Phone, BellOff, Download, FileText, AlertTriangle } from 'lucide-react';
 import { HelpScreen } from './HelpScreen';
 import { ExportScreen } from './ExportScreen';
+import { PrivacyScreen } from './PrivacyScreen';
 import { NotificationPrefs, DarkModeToggle } from './SettingsScreens';
 
 export function MoreTab() {
   const { activeProfileId, activeProfile, profiles, logout } = useAppCtx();
+  const { toast } = useToast();
   const [showEmergency, setShowEmergency] = useState(false);
   const [showUpdates, setShowUpdates] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
@@ -18,6 +22,8 @@ export function MoreTab() {
   const [showHelp, setShowHelp] = useState(false);
   const [showExport, setShowExport] = useState(false);
   const [showNotifs, setShowNotifs] = useState(false);
+  const [showPrivacy, setShowPrivacy] = useState(false);
+  const [showWipeConfirm, setShowWipeConfirm] = useState(false);
   const [darkMode, setDarkMode] = useState(() => document.documentElement.classList.contains('dark'));
 
   const toggleDark = () => {
@@ -37,7 +43,9 @@ export function MoreTab() {
     { icon: <Lock size={20} />, label: 'Security & Privacy', desc: 'Encryption, audit log', color: 'text-blue-600', bg: 'bg-blue-50', action: () => setShowSettings(true) },
     { icon: <Download size={20} />, label: 'Export Data', desc: 'Download your records', color: 'text-purple-600', bg: 'bg-purple-50', action: () => setShowExport(true) },
     { icon: <HelpCircle size={20} />, label: 'Help & FAQ', desc: 'How to use CareBinder', color: 'text-gray-500', bg: 'bg-gray-100', action: () => setShowHelp(true) },
-    { icon: <LogOut size={20} />, label: 'Sign Out', desc: '', color: 'text-red-600', bg: 'bg-red-50', action: () => { if (confirm('Sign out? All local data will be cleared.')) logout(); } },
+    { icon: <FileText size={20} />, label: 'Privacy Policy', desc: 'How we protect your data', color: 'text-gray-500', bg: 'bg-gray-100', action: () => setShowPrivacy(true) },
+    { icon: <Trash2 size={20} />, label: 'Erase All Data', desc: 'Permanently delete everything', color: 'text-red-600', bg: 'bg-red-50', action: () => setShowWipeConfirm(true) },
+    { icon: <LogOut size={20} />, label: 'Sign Out', desc: 'Your data stays on this device', color: 'text-red-600', bg: 'bg-red-50', action: () => { if (confirm('Sign out? Your health data will remain on this device.')) { clearAllReminders(); api.logout(); logout(); } } },
   ];
 
   return (
@@ -60,7 +68,9 @@ export function MoreTab() {
       <AddProfileModal open={showAddProfile} onClose={() => setShowAddProfile(false)} />
       <HelpScreen open={showHelp} onClose={() => setShowHelp(false)} />
       <ExportScreen open={showExport} onClose={() => setShowExport(false)} />
-      <NotificationPrefs open={showNotifs} onClose={() => setShowNotifs(false)} />
+      <NotificationPrefs open={showNotifs} onClose={() => setShowNotifs(false)} profileId={activeProfileId} />
+      <PrivacyScreen open={showPrivacy} onClose={() => setShowPrivacy(false)} />
+      <WipeDataModal open={showWipeConfirm} onClose={() => setShowWipeConfirm(false)} onConfirm={async () => { clearAllReminders(); await api.wipeAllData(); logout(); }} />
     </div>
   );
 }
@@ -153,6 +163,31 @@ function SettingsModal({ open, onClose, profileId }: { open: boolean; onClose: (
         <div className="bg-blue-50 rounded-xl p-4"><p className="text-sm text-blue-800 font-medium mb-1">Demo Mode Security</p><p className="text-xs text-blue-700">All records encrypted with AES-256-GCM. Encryption keys auto-generated and stored locally. In production: biometric lock, device binding, and server-side key management would be enforced.</p></div>
         <div className="bg-gray-50 rounded-xl p-4"><div className="flex items-center gap-3 mb-2"><Shield size={20} className="text-[#1B6B4A]" /><p className="font-medium text-gray-800">Encryption</p></div><p className="text-sm text-gray-600">Records are encrypted at rest using WebCrypto AES-GCM. Device key derived and stored locally.</p></div>
         <div><h4 className="font-semibold text-gray-700 mb-2">Audit Log</h4>{auditLog.length > 0 ? <div className="space-y-1 max-h-40 overflow-y-auto">{auditLog.map((e, i) => <div key={i} className="flex items-center justify-between py-1"><span className="text-sm text-gray-600">{e.action.replace(/_/g, ' ')}</span><span className="text-xs text-gray-400">{formatDate(e.timestamp)}</span></div>)}</div> : <p className="text-sm text-gray-400">No events yet</p>}</div>
+      </div>
+    </Modal>
+  );
+}
+
+function WipeDataModal({ open, onClose, onConfirm }: { open: boolean; onClose: () => void; onConfirm: () => void }) {
+  const [confirm, setConfirm] = useState('');
+  return (
+    <Modal open={open} onClose={onClose} title="Erase All Data">
+      <div className="space-y-4">
+        <div className="bg-red-50 rounded-xl p-4 flex items-start gap-3">
+          <AlertTriangle size={20} className="text-red-600 shrink-0 mt-0.5" />
+          <div>
+            <p className="font-semibold text-red-700 mb-1">This cannot be undone.</p>
+            <p className="text-sm text-red-600">All profiles, medications, dose history, records, and care team data will be permanently deleted from this device.</p>
+          </div>
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Type <strong>DELETE</strong> to confirm</label>
+          <input type="text" value={confirm} onChange={e => setConfirm(e.target.value)} placeholder="DELETE" className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:border-red-500 outline-none" />
+        </div>
+        <div className="flex gap-2">
+          <button onClick={onClose} className="flex-1 py-2.5 bg-gray-100 text-gray-700 rounded-xl text-sm font-medium">Cancel</button>
+          <button onClick={onConfirm} disabled={confirm !== 'DELETE'} className="flex-1 py-2.5 bg-red-700 text-white rounded-xl text-sm font-semibold disabled:opacity-40">Erase Everything</button>
+        </div>
       </div>
     </Modal>
   );

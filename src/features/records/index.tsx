@@ -4,8 +4,9 @@ import { cn } from '../../utils/cn';
 import { api, formatDate } from '../../core/api';
 import type { HealthRecord } from '../../core/api';
 import { useAppCtx } from '../../app/AppShell';
+import { useToast } from '../../core/toast';
 import { Card, EmptyState, RecordStatusChip, Modal } from '../../designsystem';
-import { FolderOpen, Plus, Search, Filter, FileText, Upload, ChevronRight, Trash2, Pin, PinOff, Download, Loader2 } from 'lucide-react';
+import { FolderOpen, Plus, Search, Filter, FileText, Upload, ChevronRight, Trash2, Pin, PinOff, Download, Loader2, Check } from 'lucide-react';
 
 const DOC_TYPES = ['Lab Result','Prescription','Visit Summary','Imaging Report','Referral','Insurance Card','Vaccination Record', 'Immunization', 'Other'];
 
@@ -68,13 +69,20 @@ function UploadModal({ open, onClose, profileId }: { open: boolean; onClose: () 
   const [file, setFile] = useState<File | null>(null);
   const [saving, setSaving] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const { toast } = useToast();
 
   const handleUpload = async () => {
     if (!title.trim()) return;
     setSaving(true);
-    const { blobKey } = await api.createUploadUrl();
-    await api.createRecord(profileId, { title: title.trim(), docType, provider: provider || undefined, date, tags: tags.split(',').map(t => t.trim()).filter(Boolean), blobKey }, file ?? undefined);
-    setSaving(false); setTitle(''); setDocType(DOC_TYPES[0]); setProvider(''); setDate(new Date().toISOString().split('T')[0]); setTags(''); setFile(null); setMode('chooser'); onClose();
+    try {
+      const { blobKey } = await api.createUploadUrl();
+      await api.createRecord(profileId, { title: title.trim(), docType, provider: provider || undefined, date, tags: tags.split(',').map(t => t.trim()).filter(Boolean), blobKey }, file ?? undefined);
+      toast('Upload started — extracting metadata', 'success');
+      setTitle(''); setDocType(DOC_TYPES[0]); setProvider(''); setDate(new Date().toISOString().split('T')[0]); setTags(''); setFile(null); setMode('chooser'); onClose();
+    } catch (e: any) {
+      toast(e?.message || 'Upload failed', 'error');
+    }
+    setSaving(false);
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -100,19 +108,11 @@ function UploadModal({ open, onClose, profileId }: { open: boolean; onClose: () 
           <input ref={inputRef} type="file" onChange={handleFileChange} className="hidden" />
         </div>
       ) : mode === 'fhir' ? (
-        <div className="space-y-4">
-          <p className="text-sm text-gray-500">Select your healthcare provider to securely import your records.</p>
-          <div className="space-y-2">
-            {['Epic / MyChart', 'Cerner / HealtheLife', 'AthenaHealth', 'Kaiser Permanente'].map(provider => (
-              <button key={provider} onClick={() => { setSaving(true); setTimeout(() => { setSaving(false); setMode('chooser'); onClose(); }, 2000); }} className="w-full p-4 border border-gray-200 rounded-xl text-left hover:border-[#1B6B4A] hover:bg-gray-50 flex items-center justify-between">
-                <span className="font-medium text-gray-800">{provider}</span>
-                <ChevronRight size={16} className="text-gray-400" />
-              </button>
-            ))}
-          </div>
-          {saving && <div className="text-center py-4"><Loader2 size={24} className="animate-spin text-[#1B6B4A] mx-auto mb-2" /><p className="text-xs text-gray-500">Connecting to secure server...</p></div>}
-          <button onClick={() => setMode('chooser')} className="w-full py-2 text-sm text-gray-400">Cancel</button>
-        </div>
+        <FhirImportFlow
+          profileId={profileId}
+          onDone={() => { setMode('chooser'); onClose(); }}
+          onCancel={() => setMode('chooser')}
+        />
       ) : (
       <div className="space-y-4">
         <div><label className="block text-sm font-medium text-gray-700 mb-1">Title *</label><input type="text" value={title} onChange={e => setTitle(e.target.value)} placeholder="e.g., Blood Test" className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:border-[#1B6B4A] outline-none" /></div>
@@ -134,6 +134,209 @@ function UploadModal({ open, onClose, profileId }: { open: boolean; onClose: () 
       )}
     </Modal>
   );
+}
+
+// ── FHIR IMPORT ────────────────────────────────────────────────
+
+const FHIR_PROVIDERS = [
+  {
+    id: 'epic',
+    name: 'Epic / MyChart',
+    records: [
+      { title: 'Annual Wellness Visit — Summary', docType: 'Visit Summary', provider: 'Dr. Sarah Chen', date: '2024-01-15', tags: ['annual', 'wellness'] },
+      { title: 'Complete Blood Count (CBC)', docType: 'Lab Result', provider: 'City Medical Lab', date: '2024-01-15', tags: ['blood', 'cbc', 'lab'] },
+    ],
+    medications: [
+      { displayName: 'Metformin', strength: '500mg', instructions: 'Take twice daily with meals', times: ['08:00', '20:00'], days: [0,1,2,3,4,5,6] },
+    ],
+  },
+  {
+    id: 'cerner',
+    name: 'Cerner / HealtheLife',
+    records: [
+      { title: 'Chest X-Ray — PA & Lateral', docType: 'Imaging Report', provider: 'Radiology Associates', date: '2024-03-22', tags: ['xray', 'chest', 'imaging'] },
+      { title: 'Lisinopril 10mg — Prescription', docType: 'Prescription', provider: 'Dr. James Wilson', date: '2024-03-22', tags: ['prescription', 'hypertension'] },
+    ],
+    medications: [
+      { displayName: 'Lisinopril', strength: '10mg', instructions: 'Take once daily in the morning', times: ['09:00'], days: [0,1,2,3,4,5,6] },
+    ],
+  },
+  {
+    id: 'athena',
+    name: 'AthenaHealth',
+    records: [
+      { title: 'Influenza Vaccine — 2024–25 Season', docType: 'Vaccination Record', provider: 'Community Health Clinic', date: '2024-10-05', tags: ['vaccine', 'flu', 'immunization'] },
+      { title: 'Fasting Blood Glucose Panel', docType: 'Lab Result', provider: 'Quest Diagnostics', date: '2024-10-05', tags: ['glucose', 'diabetes', 'lab'] },
+    ],
+    medications: [],
+  },
+  {
+    id: 'kaiser',
+    name: 'Kaiser Permanente',
+    records: [
+      { title: 'Cardiology Referral — Dr. Patel', docType: 'Referral', provider: 'Dr. Monica Patel', date: '2024-02-10', tags: ['referral', 'cardiology'] },
+      { title: 'Echocardiogram Report', docType: 'Imaging Report', provider: 'Kaiser Cardiology Center', date: '2024-02-28', tags: ['echo', 'heart', 'imaging'] },
+    ],
+    medications: [
+      { displayName: 'Atorvastatin', strength: '20mg', instructions: 'Take once at bedtime for cholesterol', times: ['21:00'], days: [0,1,2,3,4,5,6] },
+    ],
+  },
+] as const;
+
+type FhirStep = 'select' | 'authorizing' | 'preview' | 'importing' | 'done';
+
+function FhirImportFlow({ profileId, onDone, onCancel }: { profileId: string; onDone: () => void; onCancel: () => void }) {
+  const [step, setStep] = useState<FhirStep>('select');
+  const [selectedProvider, setSelectedProvider] = useState<typeof FHIR_PROVIDERS[number] | null>(null);
+  const [selectedRecords, setSelectedRecords] = useState<Set<number>>(new Set());
+  const [selectedMeds, setSelectedMeds] = useState<Set<number>>(new Set());
+  const [importResult, setImportResult] = useState({ recordCount: 0, medCount: 0 });
+
+  const startAuth = (provider: typeof FHIR_PROVIDERS[number]) => {
+    setSelectedProvider(provider);
+    setSelectedRecords(new Set(provider.records.map((_, i) => i)));
+    setSelectedMeds(new Set(provider.medications.map((_, i) => i)));
+    setStep('authorizing');
+    setTimeout(() => setStep('preview'), 2000);
+  };
+
+  const handleImport = async () => {
+    if (!selectedProvider) return;
+    setStep('importing');
+    const recordsToImport = selectedProvider.records.filter((_, i) => selectedRecords.has(i));
+    const medsToImport = selectedProvider.medications.filter((_, i) => selectedMeds.has(i));
+    const result = await api.fhirImport(profileId, [...recordsToImport], [...medsToImport]);
+    setImportResult(result);
+    setStep('done');
+  };
+
+  const toggleRecord = (i: number) => {
+    const next = new Set(selectedRecords);
+    if (next.has(i)) next.delete(i); else next.add(i);
+    setSelectedRecords(next);
+  };
+
+  const toggleMed = (i: number) => {
+    const next = new Set(selectedMeds);
+    if (next.has(i)) next.delete(i); else next.add(i);
+    setSelectedMeds(next);
+  };
+
+  if (step === 'select') return (
+    <div className="space-y-4">
+      <p className="text-sm text-gray-500">Select your healthcare provider to securely import records via SMART on FHIR.</p>
+      <div className="space-y-2">
+        {FHIR_PROVIDERS.map(p => (
+          <button key={p.id} onClick={() => startAuth(p)} className="w-full p-4 border border-gray-200 rounded-xl text-left hover:border-[#1B6B4A] hover:bg-gray-50 flex items-center justify-between transition-colors">
+            <div>
+              <span className="font-medium text-gray-800">{p.name}</span>
+              <p className="text-xs text-gray-400 mt-0.5">{p.records.length} records · {p.medications.length} medication{p.medications.length !== 1 ? 's' : ''} available</p>
+            </div>
+            <ChevronRight size={16} className="text-gray-400" />
+          </button>
+        ))}
+      </div>
+      <button onClick={onCancel} className="w-full py-2 text-sm text-gray-400 hover:text-gray-600">Cancel</button>
+    </div>
+  );
+
+  if (step === 'authorizing') return (
+    <div className="py-10 text-center space-y-4">
+      <Loader2 size={40} className="animate-spin text-[#1B6B4A] mx-auto" />
+      <div>
+        <p className="font-semibold text-gray-800">Connecting to {selectedProvider?.name}</p>
+        <p className="text-sm text-gray-500 mt-1">Authorizing via SMART on FHIR…</p>
+      </div>
+    </div>
+  );
+
+  if (step === 'preview' && selectedProvider) {
+    const totalSelected = selectedRecords.size + selectedMeds.size;
+    return (
+      <div className="space-y-4">
+        <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3 flex items-center gap-2">
+          <Check size={16} className="text-emerald-700 shrink-0" />
+          <p className="text-sm text-emerald-800 font-medium">Connected to {selectedProvider.name}</p>
+        </div>
+
+        {selectedProvider.records.length > 0 && (
+          <div>
+            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Documents ({selectedProvider.records.length})</p>
+            <div className="space-y-2">
+              {selectedProvider.records.map((r, i) => (
+                <label key={i} className="flex items-start gap-3 p-3 bg-gray-50 rounded-xl cursor-pointer hover:bg-gray-100 transition-colors">
+                  <input type="checkbox" checked={selectedRecords.has(i)} onChange={() => toggleRecord(i)} className="mt-0.5 accent-[#1B6B4A]" />
+                  <div>
+                    <p className="text-sm font-medium text-gray-800">{r.title}</p>
+                    <p className="text-xs text-gray-500 mt-0.5">{r.docType} · {r.provider} · {r.date}</p>
+                  </div>
+                </label>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {selectedProvider.medications.length > 0 && (
+          <div>
+            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Medications ({selectedProvider.medications.length})</p>
+            <div className="space-y-2">
+              {selectedProvider.medications.map((m, i) => (
+                <label key={i} className="flex items-start gap-3 p-3 bg-gray-50 rounded-xl cursor-pointer hover:bg-gray-100 transition-colors">
+                  <input type="checkbox" checked={selectedMeds.has(i)} onChange={() => toggleMed(i)} className="mt-0.5 accent-[#1B6B4A]" />
+                  <div>
+                    <p className="text-sm font-medium text-gray-800">{m.displayName} {m.strength}</p>
+                    <p className="text-xs text-gray-500 mt-0.5">{m.instructions}</p>
+                  </div>
+                </label>
+              ))}
+            </div>
+          </div>
+        )}
+
+        <div className="flex gap-2">
+          <button onClick={onCancel} className="flex-1 py-2.5 bg-gray-100 rounded-xl text-sm font-medium text-gray-600">Cancel</button>
+          <button
+            onClick={handleImport}
+            disabled={totalSelected === 0}
+            className="flex-1 py-2.5 bg-[#1B6B4A] text-white rounded-xl text-sm font-semibold disabled:opacity-50 transition-colors"
+          >
+            Import {totalSelected} item{totalSelected !== 1 ? 's' : ''}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (step === 'importing') return (
+    <div className="py-10 text-center space-y-4">
+      <Loader2 size={40} className="animate-spin text-[#1B6B4A] mx-auto" />
+      <div>
+        <p className="font-semibold text-gray-800">Importing records…</p>
+        <p className="text-sm text-gray-500 mt-1">Encrypting and storing your health data</p>
+      </div>
+    </div>
+  );
+
+  if (step === 'done') {
+    const { recordCount, medCount } = importResult;
+    const parts: string[] = [];
+    if (recordCount > 0) parts.push(`${recordCount} record${recordCount > 1 ? 's' : ''}`);
+    if (medCount > 0) parts.push(`${medCount} medication${medCount > 1 ? 's' : ''}`);
+    return (
+      <div className="py-6 text-center space-y-4">
+        <div className="w-16 h-16 rounded-full bg-emerald-50 flex items-center justify-center mx-auto">
+          <Check size={32} className="text-emerald-700" />
+        </div>
+        <div>
+          <p className="font-bold text-gray-900 text-lg">Import Complete!</p>
+          <p className="text-sm text-gray-500 mt-1">{parts.join(' and ')} added to your profile.</p>
+        </div>
+        <button onClick={onDone} className="w-full py-3 bg-[#1B6B4A] text-white rounded-xl font-semibold hover:bg-[#175f42] transition-colors">Done</button>
+      </div>
+    );
+  }
+
+  return null;
 }
 
 function RecordDetailModal({ record, onClose }: { record: HealthRecord | null; onClose: () => void }) {

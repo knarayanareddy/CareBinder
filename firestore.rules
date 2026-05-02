@@ -1,0 +1,42 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helper: is the requesting user a care team member of this profile?
+    function isMember(profileId) {
+      return exists(/databases/$(database)/documents/profiles/$(profileId)/careTeamMembers/$(request.auth.uid));
+    }
+
+    // User's own data
+    match /users/{userId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+      match /fcmTokens/{token} {
+        allow read, write: if request.auth != null && request.auth.uid == userId;
+      }
+    }
+
+    // Profile and all subcollections
+    match /profiles/{profileId} {
+      // Owner check: the profile's ownerId field matches the requesting user
+      function isOwner() {
+        return resource.data.ownerId == request.auth.uid;
+      }
+
+      allow read: if request.auth != null && (isOwner() || isMember(profileId));
+      allow create: if request.auth != null;
+      allow update: if request.auth != null && (isOwner() || isMember(profileId));
+      allow delete: if request.auth != null && isOwner();
+
+      match /{subcollection}/{docId} {
+        allow read: if request.auth != null && (
+          get(/databases/$(database)/documents/profiles/$(profileId)).data.ownerId == request.auth.uid
+          || isMember(profileId)
+        );
+        allow write: if request.auth != null && (
+          get(/databases/$(database)/documents/profiles/$(profileId)).data.ownerId == request.auth.uid
+          || isMember(profileId)
+        );
+      }
+    }
+  }
+}

@@ -3,6 +3,7 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { cn } from '../../utils/cn';
 import { api, formatTime, computeAdherence, type Medication, type DoseEvent } from '../../core/api';
 import { useAppCtx } from '../../app/AppShell';
+import { useToast } from '../../core/toast';
 import { Card, EmptyState, DoseSheet, SkeletonBlock } from '../../designsystem';
 import { Pill, CheckCircle2, Clock, Plus, RefreshCw, Calendar, ChevronRight } from 'lucide-react';
 import { AdherenceChart } from './AdherenceChart';
@@ -45,6 +46,7 @@ export function TodayTab() {
   const [taskTitle, setTaskTitle] = useState('');
   const [showAddApt, setShowAddApt] = useState(false);
   const [selectedAptId, setSelectedAptId] = useState<string | null>(null);
+  const { toast } = useToast();
 
   const bundle = useLiveQuery(
     () => activeProfileId ? api.getTodayBundle(activeProfileId) : null,
@@ -61,7 +63,11 @@ export function TodayTab() {
   const handleDoseAction = async (action: 'taken' | 'snooze' | 'skip', medId: string, snoozeMin?: number, skipReason?: string) => {
     try {
       await api.createDoseEvent({ medicationId: medId, profileId: activeProfileId, scheduledTime: new Date().toISOString(), action, snoozeMinutes: snoozeMin, skipReason });
-    } catch {}
+      const label = action === 'taken' ? 'Dose marked as taken' : action === 'snooze' ? `Snoozed ${snoozeMin ?? 10} min` : 'Dose skipped';
+      toast(label, 'success');
+    } catch (e: any) {
+      toast(e?.message || 'Failed to log dose', 'error');
+    }
     setDoseSheetMed(null);
   };
 

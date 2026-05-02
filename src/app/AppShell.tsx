@@ -155,7 +155,7 @@ export function AppShell({ children, showProfileSwitcher }: { children: ReactNod
           {unreadCount > 0 && <span className="absolute -top-0.5 -right-0.5 w-5 h-5 bg-red-500 text-white text-xs rounded-full flex items-center justify-center font-bold">{unreadCount > 9 ? '9+' : unreadCount}</span>}
         </button>
       </header>
-      {showProfileSwitcher && profiles.length > 1 && (
+      {showProfileSwitcher && profiles.length > 0 && (
         <div className="bg-white px-4 py-2 flex gap-2 overflow-x-auto border-b border-gray-50 shrink-0">
           {profiles.map(p => <ProfileChip key={p.id} name={p.name} color={p.avatarColor} active={p.id === activeProfileId} onClick={() => setActiveProfileId(p.id)} />)}
         </div>
