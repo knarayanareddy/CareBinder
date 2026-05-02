@@ -4,13 +4,13 @@ import { getFirestore } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
 
 const firebaseConfig = {
-  apiKey: "AIzaSyCR8d8hgitbdruEw95jv31CXvIHPG9sB3U",
-  authDomain: "carebinder-f27df.firebaseapp.com",
-  projectId: "carebinder-f27df",
-  storageBucket: "carebinder-f27df.firebasestorage.app",
-  messagingSenderId: "327019147850",
-  appId: "1:327019147850:web:6548dab18b56900ac2ecb3",
-  measurementId: "G-HQ3SE4PT0Y",
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+  appId: import.meta.env.VITE_FIREBASE_APP_ID,
+  measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID,
 };
 
 export const app = getApps().length ? getApps()[0] : initializeApp(firebaseConfig);
